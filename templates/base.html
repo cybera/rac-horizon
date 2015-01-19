@@ -14,6 +14,11 @@
     {% include "horizon/_custom_head_js.html" %}
   </head>
   <body id="{% block body_id %}{% endblock %}" ng-app='hz'>
+    {% if request.user.is_authenticated and admin_notice != '' %}
+      {% autoescape off %}
+      <p class="alert-admin-notice">{{ admin_notice }}</p>
+      {% endautoescape %}
+    {% endif %}
     {% block content %}
       <div id="container">
         <div class='topbar'>
