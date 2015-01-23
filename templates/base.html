@@ -18,6 +18,8 @@
       {% autoescape off %}
       <p class="alert-admin-notice">{{ admin_notice }}</p>
       {% endautoescape %}
+    {% else %}
+    <p class="alert-rac-info"><a href="http://www.cybera.ca/strategic-projects/rapid-access-cloud/">Abount RAC</a> | <a href="/static/CHANGELOG.txt">Updates</a></p>
     {% endif %}
     {% block content %}
       <div id="container">
