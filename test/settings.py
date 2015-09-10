@@ -1,5 +1,3 @@
-# vim: tabstop=4 shiftwidth=4 softtabstop=4
-
 # Copyright 2012 United States Government as represented by the
 # Administrator of the National Aeronautics and Space Administration.
 # All Rights Reserved.
@@ -20,7 +18,19 @@
 
 import os
 import socket
+import sys
 
+import django
+from django.utils import html_parser
+from openstack_dashboard.static_settings import get_staticfiles_dirs  # noqa
+
+from horizon.test import patches
+
+STATICFILES_DIRS = get_staticfiles_dirs()
+
+# Patch django.utils.html_parser.HTMLParser as a workaround for bug 1273943
+if django.get_version() == '1.4' and sys.version_info[:3] > (2, 7, 3):
+    html_parser.HTMLParser.parse_starttag = patches.parse_starttag_patched
 
 socket.setdefaulttimeout(1)
 
@@ -51,6 +61,7 @@ INSTALLED_APPS = (
     'django.contrib.auth',
     'django.contrib.contenttypes',
     'django_nose',
+    'django_pyscss',
     'compressor',
     'horizon',
     'horizon.test',
@@ -64,9 +75,17 @@ MIDDLEWARE_CLASSES = (
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
-    'django.middleware.doc.XViewMiddleware',
+)
+if django.VERSION >= (1, 8, 0):
+    MIDDLEWARE_CLASSES += (
+        'django.contrib.auth.middleware.SessionAuthenticationMiddleware',)
+else:
+    MIDDLEWARE_CLASSES += ('django.middleware.doc.XViewMiddleware',)
+MIDDLEWARE_CLASSES += (
+    'horizon.middleware.HorizonMiddleware',
     'django.middleware.locale.LocaleMiddleware',
-    'horizon.middleware.HorizonMiddleware')
+    'django.middleware.clickjacking.XFrameOptionsMiddleware',
+)
 
 TEMPLATE_CONTEXT_PROCESSORS = (
     'django.core.context_processors.debug',
@@ -115,7 +134,7 @@ HORIZON_CONFIG = {
         "help_text": "Password must be between 8 and 18 characters."
     },
     'user_home': None,
-    'help_url': "http://example.com"
+    'help_url': "http://example.com",
 }
 
 COMPRESS_ENABLED = True

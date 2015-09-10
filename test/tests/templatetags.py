@@ -1,5 +1,3 @@
-# vim: tabstop=4 shiftwidth=4 softtabstop=4
-
 # Copyright 2012 United States Government as represented by the
 # Administrator of the National Aeronautics and Space Administration.
 # All Rights Reserved.
@@ -26,6 +24,10 @@ from django.template import Template  # noqa
 from django.utils.text import normalize_newlines  # noqa
 
 from horizon.test import helpers as test
+from horizon.test.test_dashboards.cats.dashboard import Cats  # noqa
+from horizon.test.test_dashboards.cats.kittens.panel import Kittens  # noqa
+from horizon.test.test_dashboards.dogs.dashboard import Dogs  # noqa
+from horizon.test.test_dashboards.dogs.puppies.panel import Puppies  # noqa
 
 
 def single_line(text):
@@ -51,13 +53,13 @@ class TemplateTagTests(test.TestCase):
         """Test if site_branding tag renders the correct setting."""
         rendered_str = self.render_template_tag("site_branding", "branding")
         self.assertEqual(settings.SITE_BRANDING, rendered_str.strip(),
-                        "tag site_branding renders %s" % rendered_str.strip())
+                         "tag site_branding renders %s" % rendered_str.strip())
 
     def test_size_format_filters(self):
         size_str = ('5|diskgbformat', '10|diskgbformat',
                     '5555|mb_float_format', '80|mb_float_format',
                     '.5|mbformat', '0.005|mbformat', '0.0005|mbformat')
-        expected = u' 5.0GB 10.0GB 5.4GB 80.0MB 512KB 5KB 524Bytes '
+        expected = u' 5GB 10GB 5.4GB 80MB 512KB 5KB 524Bytes '
 
         text = ''
         for size_filter in size_str:
@@ -65,7 +67,7 @@ class TemplateTagTests(test.TestCase):
 
         rendered_str = self.render_template(tag_require='sizeformat',
                                             template_text=text)
-        self.assertEqual(rendered_str, expected)
+        self.assertEqual(expected, rendered_str)
 
     def test_size_format_filters_with_string(self):
         size_str = ('"test"|diskgbformat', '"limit"|mb_float_format',
@@ -78,33 +80,51 @@ class TemplateTagTests(test.TestCase):
 
         rendered_str = self.render_template(tag_require='sizeformat',
                                             template_text=text)
-        self.assertEqual(rendered_str, expected)
+        self.assertEqual(expected, rendered_str)
 
     def test_truncate_filter(self):
         ctx_string = {'val1': 'he',
                       'val2': 'hellotrunc',
                       'val3': 'four'}
 
-        text = ('{{test.val1|truncate:1}}#{{test.val2|truncate:4}}#'
-                '{{test.val3|truncate:10}}')
+        text = ('{{ test.val1|truncate:1 }}#{{ test.val2|truncate:4 }}#'
+                '{{ test.val3|truncate:10 }}')
 
         expected = u' h#h...#four'
         rendered_str = self.render_template(tag_require='truncate_filter',
                                             template_text=text,
                                             context={'test': ctx_string})
-        self.assertEqual(rendered_str, expected)
+        self.assertEqual(expected, rendered_str)
 
     def test_quota_filter(self):
         ctx_string = {'val1': 100,
                       'val2': 1000,
                       'val3': float('inf')}
 
-        text = ('{{test.val1|quota:"TB"}}#{{test.val2|quota}}#'
-                '{{test.val3|quota}}')
+        text = ('{{ test.val1|quota:"TB" }}#{{ test.val2|quota }}#'
+                '{{ test.val3|quota }}')
 
         expected = u' 100 TB Available#1000 Available#No Limit'
 
         rendered_str = self.render_template(tag_require='horizon',
                                             template_text=text,
                                             context={'test': ctx_string})
-        self.assertEqual(rendered_str, expected)
+        self.assertEqual(expected, rendered_str)
+
+    def test_horizon_main_nav(self):
+        text = "{% horizon_main_nav %}"
+        expected = """
+                <div class='clearfix'>
+                    <ul class=\"nav nav-tabs\" role=\"tablist\">
+                        <li>
+                            <a href=\"/cats/\" tabindex='1'>Cats</a>
+                        </li>
+                        <li>
+                            <a href=\"/dogs/\" tabindex='1'>Dogs</a>
+                        </li>
+                    </ul></div>"""
+
+        rendered_str = self.render_template(tag_require='horizon',
+                                            template_text=text,
+                                            context={'request': self.request})
+        self.assertEqual(single_line(rendered_str), single_line(expected))

@@ -28,8 +28,18 @@ var Horizon = function () {
     initFunctions = [];
   };
 
+  /* An utility function for escaping HTML to avoid XSS. */
+  horizon.escape_html = function (text) {
+    return text.replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#x27;')
+      .replace(/\//g, '&#x2F;');
+  };
+
   return horizon;
 };
 
 // Create the one and only horizon object.
-var horizon = new Horizon();
+var horizon = new Horizon(); // jshint ignore:line

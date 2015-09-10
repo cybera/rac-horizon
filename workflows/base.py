@@ -1,5 +1,3 @@
-# vim: tabstop=4 shiftwidth=4 softtabstop=4
-
 # Copyright 2012 Nebula, Inc.
 #
 #    Licensed under the Apache License, Version 2.0 (the "License"); you may
@@ -25,9 +23,10 @@ from django import template
 from django.template.defaultfilters import linebreaks  # noqa
 from django.template.defaultfilters import safe  # noqa
 from django.template.defaultfilters import slugify  # noqa
-from django.utils.encoding import force_unicode
+from django.utils.encoding import force_text
 from django.utils.importlib import import_module  # noqa
 from django.utils.translation import ugettext_lazy as _
+import six
 
 from horizon import base
 from horizon import exceptions
@@ -68,13 +67,14 @@ class ActionMetaclass(forms.forms.DeclarativeFieldsMetaclass):
         cls.slug = getattr(opts, "slug", slugify(name))
         cls.permissions = getattr(opts, "permissions", ())
         cls.progress_message = getattr(opts,
-                                            "progress_message",
-                                            _("Processing..."))
+                                       "progress_message",
+                                       _("Processing..."))
         cls.help_text = getattr(opts, "help_text", "")
         cls.help_text_template = getattr(opts, "help_text_template", None)
         return cls
 
 
+@six.add_metaclass(ActionMetaclass)
 class Action(forms.Form):
     """An ``Action`` represents an atomic logical interaction you can have with
     the system. This is easier to understand with a conceptual example: in the
@@ -125,8 +125,6 @@ class Action(forms.Form):
         customize your help text template to display practically anything.
     """
 
-    __metaclass__ = ActionMetaclass
-
     def __init__(self, request, context, *args, **kwargs):
         if request.method == "POST":
             super(Action, self).__init__(request.POST, initial=context)
@@ -141,7 +139,7 @@ class Action(forms.Form):
         self.required_css_class = 'required'
 
     def __unicode__(self):
-        return force_unicode(self.name)
+        return force_text(self.name)
 
     def __repr__(self):
         return "<%s: %s>" % (self.__class__.__name__, self.slug)
@@ -161,7 +159,7 @@ class Action(forms.Form):
             context = template.RequestContext(self.request, extra_context)
             text += tmpl.render(context)
         else:
-            text += linebreaks(force_unicode(self.help_text))
+            text += linebreaks(force_text(self.help_text))
         return safe(text)
 
     def add_action_error(self, message):
@@ -209,7 +207,7 @@ class Step(object):
 
     A ``Step`` class has the following attributes:
 
-    .. attribute:: action
+    .. attribute:: action_class
 
         The :class:`~horizon.workflows.Action` class which this step wraps.
 
@@ -287,7 +285,7 @@ class Step(object):
         return "<%s: %s>" % (self.__class__.__name__, self.slug)
 
     def __unicode__(self):
-        return force_unicode(self.name)
+        return force_text(self.name)
 
     def __init__(self, workflow):
         super(Step, self).__init__()
@@ -295,7 +293,7 @@ class Step(object):
 
         cls = self.__class__.__name__
         if not (self.action_class and issubclass(self.action_class, Action)):
-            raise AttributeError("You must specify an action for %s." % cls)
+            raise AttributeError("action_class not specified for %s." % cls)
 
         self.slug = self.action_class.slug
         self.name = self.action_class.name
@@ -321,8 +319,8 @@ class Step(object):
                     self._handlers[key].append(possible_handler)
                     continue
                 elif not isinstance(possible_handler, basestring):
-                    return TypeError("Connection handlers must be either "
-                                     "callables or strings.")
+                    raise TypeError("Connection handlers must be either "
+                                    "callables or strings.")
                 bits = possible_handler.split(".")
                 if bits[0] == "self":
                     root = self
@@ -349,8 +347,8 @@ class Step(object):
                     except ImportError:
                         raise ImportError("Could not import %s from the "
                                           "module %s as a connection "
-                                             "handler on %s."
-                                             % (bits[-1], module_name, cls))
+                                          "handler on %s."
+                                          % (bits[-1], module_name, cls))
                     except AttributeError:
                         raise AttributeError("Could not import %s from the "
                                              "module %s as a connection "
@@ -428,7 +426,7 @@ class Step(object):
 
     def get_help_text(self):
         """Returns the help text for this step."""
-        text = linebreaks(force_unicode(self.help_text))
+        text = linebreaks(force_text(self.help_text))
         text += self.action.get_help_text()
         return safe(text)
 
@@ -486,6 +484,7 @@ class UpdateMembersStep(Step):
             return self.slug + "_role_" + role_id
 
 
+@six.add_metaclass(WorkflowMetaclass)
 class Workflow(html.HTMLElement):
     """A Workflow is a collection of Steps. Its interface is very
     straightforward, but it is responsible for handling some very
@@ -589,7 +588,6 @@ class Workflow(html.HTMLElement):
         Defaults to ``False``.
 
     """
-    __metaclass__ = WorkflowMetaclass
     slug = None
     default_steps = ()
     template_name = "horizon/common/_workflow.html"
@@ -675,7 +673,7 @@ class Workflow(html.HTMLElement):
         self._ordered_steps = [self._registry[step_class]
                                for step_class in ordered_step_classes
                                if has_permissions(self.request.user,
-                                          self._registry[step_class])]
+                                                  self._registry[step_class])]
 
     def _order_steps(self):
         steps = list(copy.copy(self.default_steps))
@@ -725,7 +723,7 @@ class Workflow(html.HTMLElement):
     def _trigger_handlers(self, key):
         responses = []
         handlers = [(step.slug, f) for step in self.steps
-                                   for f in step._handlers.get(key, [])]
+                    for f in step._handlers.get(key, [])]
         for slug, handler in handlers:
             responses.append((slug, handler(self.request, self.context)))
         return responses

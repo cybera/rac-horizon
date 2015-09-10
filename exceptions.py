@@ -1,5 +1,3 @@
-# vim: tabstop=4 shiftwidth=4 softtabstop=4
-
 # Copyright 2012 Nebula, Inc.
 #
 #    Licensed under the Apache License, Version 2.0 (the "License"); you may
@@ -22,8 +20,11 @@ import logging
 import os
 import sys
 
+import six
+
 from django.core.management import color_style  # noqa
 from django.http import HttpRequest  # noqa
+from django.utils import encoding
 from django.utils.translation import ugettext_lazy as _
 from django.views.debug import CLEANSED_SUBSTITUTE  # noqa
 from django.views.debug import SafeExceptionReporterFilter  # noqa
@@ -159,7 +160,7 @@ class AlreadyExists(HorizonException):
     """
     def __init__(self, name, resource_type):
         self.attrs = {"name": name, "resource": resource_type}
-        self.msg = 'A %(resource)s with the name "%(name)s" already exists.'
+        self.msg = _('A %(resource)s with the name "%(name)s" already exists.')
 
     def __repr__(self):
         return self.msg % self.attrs
@@ -168,7 +169,17 @@ class AlreadyExists(HorizonException):
         return self.msg % self.attrs
 
     def __unicode__(self):
-        return _(self.msg) % self.attrs
+        return self.msg % self.attrs
+
+
+class ConfigurationError(HorizonException):
+    """Exception to be raised when invalid settings have been provided."""
+    pass
+
+
+class NotAvailable(HorizonException):
+    """Exception to be raised when something is not available."""
+    pass
 
 
 class WorkflowError(HorizonException):
@@ -193,7 +204,7 @@ class HandledException(HorizonException):
 
 UNAUTHORIZED = tuple(HORIZON_CONFIG['exceptions']['unauthorized'])
 NOT_FOUND = tuple(HORIZON_CONFIG['exceptions']['not_found'])
-RECOVERABLE = (AlreadyExists, Conflict,)
+RECOVERABLE = (AlreadyExists, Conflict, NotAvailable, ServiceCatalogException)
 RECOVERABLE += tuple(HORIZON_CONFIG['exceptions']['recoverable'])
 
 
@@ -210,6 +221,70 @@ def check_message(keywords, message):
     if set(str(exc_value).split(" ")).issuperset(set(keywords)):
         exc_value._safe_message = message
         raise
+
+
+def handle_unauthorized(request, message, redirect, ignore, escalate, handled,
+                        force_silence, force_log,
+                        log_method, log_entry, log_level):
+    if ignore:
+        return NotAuthorized
+    if not force_silence and not handled:
+        log_method(error_color("Unauthorized: %s" % log_entry))
+    if not handled:
+        if message:
+            message = _("Unauthorized: %s") % message
+        # We get some pretty useless error messages back from
+        # some clients, so let's define our own fallback.
+        fallback = _("Unauthorized. Please try logging in again.")
+        messages.error(request, message or fallback)
+    # Escalation means logging the user out and raising NotAuthorized
+    # so the middleware will redirect them appropriately.
+    if escalate:
+        # Prevents creation of circular import. django.contrib.auth
+        # requires openstack_dashboard.settings to be loaded (by trying to
+        # access settings.CACHES in in django.core.caches) while
+        # openstack_dashboard.settings requires django.contrib.auth to be
+        # loaded while importing openstack_auth.utils
+        from django.contrib.auth import logout  # noqa
+        logout(request)
+        raise NotAuthorized
+    # Otherwise continue and present our "unauthorized" error message.
+    return NotAuthorized
+
+
+def handle_notfound(request, message, redirect, ignore, escalate, handled,
+                    force_silence, force_log,
+                    log_method, log_entry, log_level):
+    if not force_silence and not handled and (not ignore or force_log):
+        log_method(error_color("Not Found: %s" % log_entry))
+    if not ignore and not handled:
+        messages.error(request, message or log_entry)
+    if redirect:
+        raise Http302(redirect)
+    if not escalate:
+        return NotFound  # return to normal code flow
+
+
+def handle_recoverable(request, message, redirect, ignore, escalate, handled,
+                       force_silence, force_log,
+                       log_method, log_entry, log_level):
+    if not force_silence and not handled and (not ignore or force_log):
+        # Default recoverable error to WARN log level
+        log_method = getattr(LOG, log_level or "warning")
+        log_method(error_color("Recoverable error: %s" % log_entry))
+    if not ignore and not handled:
+        messages.error(request, message or log_entry)
+    if redirect:
+        raise Http302(redirect)
+    if not escalate:
+        return RecoverableError  # return to normal code flow
+
+
+HANDLE_EXC_METHODS = [
+    {'exc': UNAUTHORIZED, 'handler': handle_unauthorized, 'set_wrap': False},
+    {'exc': NOT_FOUND, 'handler': handle_notfound, 'set_wrap': True},
+    {'exc': RECOVERABLE, 'handler': handle_recoverable, 'set_wrap': True},
+]
 
 
 def handle(request, message=None, redirect=None, ignore=False,
@@ -257,6 +332,8 @@ def handle(request, message=None, redirect=None, ignore=False,
         exc_type, exc_value, exc_traceback = exc_value.wrapped
         wrap = True
 
+    log_entry = encoding.force_text(exc_value)
+
     # We trust messages from our own exceptions
     if issubclass(exc_type, HorizonException):
         message = exc_value
@@ -265,59 +342,23 @@ def handle(request, message=None, redirect=None, ignore=False,
         message = exc_value._safe_message
     # If the message has a placeholder for the exception, fill it in
     elif message and "%(exc)s" in message:
-        message = message % {"exc": exc_value}
+        message = encoding.force_text(message) % {"exc": log_entry}
+    if message:
+        message = encoding.force_text(message)
 
-    if issubclass(exc_type, UNAUTHORIZED):
-        if ignore:
-            return NotAuthorized
-        if not force_silence and not handled:
-            log_method(error_color("Unauthorized: %s" % exc_value))
-        if not handled:
-            if message:
-                message = _("Unauthorized: %s") % message
-            # We get some pretty useless error messages back from
-            # some clients, so let's define our own fallback.
-            fallback = _("Unauthorized. Please try logging in again.")
-            messages.error(request, message or fallback)
-        # Escalation means logging the user out and raising NotAuthorized
-        # so the middleware will redirect them appropriately.
-        if escalate:
-            # Prevents creation of circular import. django.contrib.auth
-            # requires openstack_dashboard.settings to be loaded (by trying to
-            # access settings.CACHES in in django.core.caches) while
-            # openstack_dashboard.settings requires django.contrib.auth to be
-            # loaded while importing openstack_auth.utils
-            from django.contrib.auth import logout  # noqa
-            logout(request)
-            raise NotAuthorized
-        # Otherwise continue and present our "unauthorized" error message.
-        return NotAuthorized
-
-    if issubclass(exc_type, NOT_FOUND):
-        wrap = True
-        if not force_silence and not handled and (not ignore or force_log):
-            log_method(error_color("Not Found: %s" % exc_value))
-        if not ignore and not handled:
-            messages.error(request, message or exc_value)
-        if redirect:
-            raise Http302(redirect)
-        if not escalate:
-            return NotFound  # return to normal code flow
-
-    if issubclass(exc_type, RECOVERABLE):
-        wrap = True
-        if not force_silence and not handled and (not ignore or force_log):
-            # Default recoverable error to WARN log level
-            log_method = getattr(LOG, log_level or "warning")
-            log_method(error_color("Recoverable error: %s" % exc_value))
-        if not ignore and not handled:
-            messages.error(request, message or exc_value)
-        if redirect:
-            raise Http302(redirect)
-        if not escalate:
-            return RecoverableError  # return to normal code flow
+    for exc_handler in HANDLE_EXC_METHODS:
+        if issubclass(exc_type, exc_handler['exc']):
+            if exc_handler['set_wrap']:
+                wrap = True
+            handler = exc_handler['handler']
+            ret = handler(request, message, redirect, ignore, escalate,
+                          handled, force_silence, force_log,
+                          log_method, log_entry, log_level)
+            if ret:
+                return ret  # return to normal code flow
 
     # If we've gotten here, time to wrap and/or raise our exception.
     if wrap:
         raise HandledException([exc_type, exc_value, exc_traceback])
-    raise exc_type, exc_value, exc_traceback
+
+    six.reraise(exc_type, exc_value, exc_traceback)

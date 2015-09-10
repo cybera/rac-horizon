@@ -1,5 +1,3 @@
-# vim: tabstop=4 shiftwidth=4 softtabstop=4
-
 # Copyright 2012 United States Government as represented by the
 # Administrator of the National Aeronautics and Space Administration.
 # All Rights Reserved.
@@ -18,27 +16,40 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+import django
 import logging
 import os
 import socket
+import time
 
 from django.contrib.auth.middleware import AuthenticationMiddleware  # noqa
 from django.contrib.auth.models import Permission  # noqa
 from django.contrib.auth.models import User  # noqa
 from django.contrib.contenttypes.models import ContentType  # noqa
 from django.contrib.messages.storage import default_storage  # noqa
+from django.contrib.sessions.backends.base import SessionBase  # noqa
 from django.core.handlers import wsgi
 from django import http
 from django import test as django_test
 from django.test.client import RequestFactory  # noqa
+from django.test import testcases
+from django.utils.encoding import force_text
 from django.utils import unittest
+
+if django.VERSION < (1, 7):
+    from django.test import LiveServerTestCase  # noqa
+else:
+    from django.contrib.staticfiles.testing \
+            import StaticLiveServerTestCase as LiveServerTestCase  # noqa
 
 LOG = logging.getLogger(__name__)
 
 
 try:
-    from selenium.webdriver.firefox.webdriver import WebDriver  # noqa
     from selenium.webdriver.support import ui as selenium_ui
+    import xvfbwrapper  # Only needed when running the Selenium tests headless
+
+    from horizon.test.webdriver import WebDriver  # noqa
 except ImportError as e:
     # NOTE(saschpe): Several distribution can't ship selenium due to its
     # non-free license. So they have to patch it out of test-requirements.txt
@@ -56,24 +67,55 @@ from horizon import middleware
 wsgi.WSGIRequest.__repr__ = lambda self: "<class 'django.http.HttpRequest'>"
 
 
+class SessionStore(SessionBase):
+    """Dict like object for simulating sessions in unittests."""
+
+    def load(self):
+        self.create()
+        return {}
+
+    def create(self):
+        self.modified = True
+
+    def save(self, must_create=False):
+        self._session_key = self._get_session_key()
+        self.modified = True
+
+    def exists(self, session_key=None):
+        return False
+
+    def delete(self, session_key=None):
+
+        self._session_key = ''
+        self._session_cache = {}
+        self.modified = True
+
+    def cycle_key(self):
+        self.save()
+
+    @classmethod
+    def clear_expired(cls):
+        pass
+
+
 class RequestFactoryWithMessages(RequestFactory):
     def get(self, *args, **kwargs):
         req = super(RequestFactoryWithMessages, self).get(*args, **kwargs)
         req.user = User()
-        req.session = {}
+        req.session = SessionStore()
         req._messages = default_storage(req)
         return req
 
     def post(self, *args, **kwargs):
         req = super(RequestFactoryWithMessages, self).post(*args, **kwargs)
         req.user = User()
-        req.session = {}
+        req.session = SessionStore()
         req._messages = default_storage(req)
         return req
 
 
 @unittest.skipIf(os.environ.get('SKIP_UNITTESTS', False),
-                     "The SKIP_UNITTESTS env variable is set.")
+                 "The SKIP_UNITTESTS env variable is set.")
 class TestCase(django_test.TestCase):
     """Specialized base test case class for Horizon which gives access to
     numerous additional features:
@@ -84,18 +126,32 @@ class TestCase(django_test.TestCase):
       * A ready-to-go request object via ``self.request``.
     """
     def setUp(self):
+        super(TestCase, self).setUp()
         self.mox = mox.Mox()
-        self.factory = RequestFactoryWithMessages()
-        self.user = User.objects.create_user(username='test', password='test')
-        self.assertTrue(self.client.login(username="test", password="test"))
-
-        self.request = http.HttpRequest()
-        self.request.session = self.client._session()
+        self._setup_test_data()
+        self._setup_factory()
+        self._setup_user()
+        self._setup_request()
         middleware.HorizonMiddleware().process_request(self.request)
         AuthenticationMiddleware().process_request(self.request)
         os.environ["HORIZON_TEST_RUN"] = "True"
 
+    def _setup_test_data(self):
+        pass
+
+    def _setup_factory(self):
+        self.factory = RequestFactoryWithMessages()
+
+    def _setup_user(self):
+        self.user = User.objects.create_user(username='test', password='test')
+        self.assertTrue(self.client.login(username="test", password="test"))
+
+    def _setup_request(self):
+        self.request = http.HttpRequest()
+        self.request.session = self.client._session()
+
     def tearDown(self):
+        super(TestCase, self).tearDown()
         self.mox.UnsetStubs()
         self.mox.VerifyAll()
         del os.environ["HORIZON_TEST_RUN"]
@@ -154,18 +210,67 @@ class TestCase(django_test.TestCase):
 
         # Otherwise, make sure we got the expected messages.
         for msg_type, count in kwargs.items():
-            msgs = [m.message for m in messages if msg_type in m.tags]
+            msgs = [force_text(m.message)
+                    for m in messages if msg_type in m.tags]
             assert len(msgs) == count, \
-                   "%s messages not as expected: %s" % (msg_type.title(),
-                                                        ", ".join(msgs))
+                "%s messages not as expected: %s" % (msg_type.title(),
+                                                     ", ".join(msgs))
+
+    def assertNotContains(self, response, text, status_code=200,
+                          msg_prefix='', html=False):
+        """Asserts that a response indicates that some content was retrieved
+        successfully, (i.e., the HTTP status code was as expected), and that
+        ``text`` doesn't occurs in the content of the response.
+
+        This is an override of django_test.TestCase.assertNotContains method,
+        which is able to work with StreamingHttpResponse.
+        """
+        # If the response supports deferred rendering and hasn't been rendered
+        # yet, then ensure that it does get rendered before proceeding further.
+        if (hasattr(response, 'render') and callable(response.render) and
+                not response.is_rendered):
+            response.render()
+
+        if msg_prefix:
+            msg_prefix += ": "
+
+        self.assertEqual(
+            response.status_code, status_code,
+            msg_prefix + "Couldn't retrieve content: Response code was %d"
+            " (expected %d)" % (response.status_code, status_code))
+
+        if getattr(response, 'streaming', False):
+            content = b''.join(response.streaming_content)
+        else:
+            content = response.content
+        if not isinstance(text, bytes) or html:
+            text = force_text(text, encoding=response._charset)
+            content = content.decode(response._charset)
+            text_repr = "'%s'" % text
+        else:
+            text_repr = repr(text)
+        if html:
+            content = testcases.assert_and_parse_html(
+                self, content, None, 'Response\'s content is not valid HTML:')
+            text = testcases.assert_and_parse_html(
+                self, text, None, 'Second argument is not valid HTML:')
+        self.assertEqual(
+            content.count(text), 0,
+            msg_prefix + "Response should not contain %s" % text_repr)
 
 
 @unittest.skipUnless(os.environ.get('WITH_SELENIUM', False),
                      "The WITH_SELENIUM env variable is not set.")
-class SeleniumTestCase(django_test.LiveServerTestCase):
+class SeleniumTestCase(LiveServerTestCase):
     @classmethod
     def setUpClass(cls):
+        socket.setdefaulttimeout(60)
         if os.environ.get('WITH_SELENIUM', False):
+            time.sleep(1)
+            # Start a virtual display server for running the tests headless.
+            if os.environ.get('SELENIUM_HEADLESS', False):
+                cls.vdisplay = xvfbwrapper.Xvfb(width=1280, height=720)
+                cls.vdisplay.start()
             cls.selenium = WebDriver()
         super(SeleniumTestCase, cls).setUpClass()
 
@@ -173,10 +278,14 @@ class SeleniumTestCase(django_test.LiveServerTestCase):
     def tearDownClass(cls):
         if os.environ.get('WITH_SELENIUM', False):
             cls.selenium.quit()
+            time.sleep(1)
+        if hasattr(cls, 'vdisplay'):
+            cls.vdisplay.stop()
         super(SeleniumTestCase, cls).tearDownClass()
 
     def setUp(self):
-        socket.setdefaulttimeout(10)
+        socket.setdefaulttimeout(60)
+        self.selenium.implicitly_wait(30)
         self.ui = selenium_ui
         super(SeleniumTestCase, self).setUp()
 
@@ -191,12 +300,12 @@ class JasmineTests(SeleniumTestCase):
 
     .. attribute:: sources
 
-        A list of of JS source files (the {{STATIC_URL}} will be added
+        A list of JS source files (the {{ STATIC_URL }} will be added
         automatically, these are the source files tested
 
     .. attribute:: specs
 
-        A list of of Jasmine JS spec files (the {{STATIC_URL}} will be added
+        A list of Jasmine JS spec files (the {{ STATIC_URL }} will be added
         automatically
 
     .. attribute:: template_name
@@ -225,14 +334,14 @@ class JasmineTests(SeleniumTestCase):
 
         wait.until(jasmine_done)
         failures = \
-            self.selenium.find_elements_by_css_selector(".specDetail.failed")
+            self.selenium.find_elements_by_css_selector(".spec-detail.failed")
 
         results = []
         for failure in failures:
             results.append(
                 failure.find_element_by_class_name("description").text)
             results.append(
-                failure.find_element_by_class_name("stackTrace").text)
+                failure.find_element_by_class_name("stack-trace").text)
 
         self.assertEqual(results, [], '\n\n' + '\n\n'.join(results) + '\n\n')
 

@@ -1,4 +1,4 @@
-{% load horizon %}{% jstemplate %}[% extends '{{ dash_name }}/base.html' %]
+{% load horizon %}{% jstemplate %}[% extends 'base.html' %]
 [% load i18n %]
 [% block title %][% trans "{{ panel_name|title }}" %][% endblock %]
 
@@ -6,7 +6,7 @@
   [% include "horizon/common/_page_header.html" with title=_("{{ panel_name|title }}") %]
 [% endblock page_header %]
 
-[% block {{ dash_name }}_main %]
+[% block main %]
 [% endblock %]
 
 {% endjstemplate %}

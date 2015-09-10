@@ -1,5 +1,3 @@
-# vim: tabstop=4 shiftwidth=4 softtabstop=4
-
 # Licensed under the Apache License, Version 2.0 (the "License"); you may
 # not use this file except in compliance with the License. You may obtain
 # a copy of the License at
@@ -24,9 +22,9 @@ register = base.Library()
 def shellfilter(value):
     """Replace HTML chars for shell usage."""
     replacements = {'\\': '\\\\',
-                   '`': '\`',
-                   "'": "\\'",
-                   '"': '\\"'}
+                    '`': '\`',
+                    "'": "\\'",
+                    '"': '\\"'}
     for search, repl in replacements.items():
         value = value.replace(search, repl)
     return safestring.mark_safe(value)

@@ -1,5 +1,3 @@
-# vim: tabstop=4 shiftwidth=4 softtabstop=4
-
 # Copyright 2012 Nebula, Inc.
 #
 #    Licensed under the Apache License, Version 2.0 (the "License"); you may
@@ -29,9 +27,9 @@ import logging
 import os
 
 from django.conf import settings
-from django.conf.urls import include  # noqa
-from django.conf.urls import patterns  # noqa
-from django.conf.urls import url  # noqa
+from django.conf.urls import include
+from django.conf.urls import patterns
+from django.conf.urls import url
 from django.core.exceptions import ImproperlyConfigured  # noqa
 from django.core.urlresolvers import reverse
 from django.utils.datastructures import SortedDict
@@ -58,11 +56,30 @@ def _decorate_urlconf(urlpatterns, decorator, *args, **kwargs):
             _decorate_urlconf(pattern.url_patterns, decorator, *args, **kwargs)
 
 
+def access_cached(func):
+    def inner(self, context):
+        session = context['request'].session
+        try:
+            if session['allowed']['valid_for'] != session.get('token'):
+                raise KeyError()
+        except KeyError:
+            session['allowed'] = {"valid_for": session.get('token')}
+
+        key = "%s.%s" % (self.__class__.__module__, self.__class__.__name__)
+        if key not in session['allowed']:
+            session['allowed'][key] = func(self, context)
+            session.modified = True
+        return session['allowed'][key]
+    return inner
+
+
 class NotRegistered(Exception):
     pass
 
 
 class HorizonComponent(object):
+    policy_rules = None
+
     def __init__(self):
         super(HorizonComponent, self).__init__()
         if not self.slug:
@@ -89,6 +106,38 @@ class HorizonComponent(object):
             else:
                 urlpatterns = patterns('')
         return urlpatterns
+
+    @access_cached
+    def can_access(self, context):
+        """Return whether the user has role based access to this component.
+
+        This method is not intended to be overridden.
+        The result of the method is stored in per-session cache.
+        """
+        return self.allowed(context)
+
+    def allowed(self, context):
+        """Checks if the user is allowed to access this component.
+
+        This method should be overridden to return the result of
+        any policy checks required for the user to access this component
+        when more complex checks are required.
+        """
+        return self._can_access(context['request'])
+
+    def _can_access(self, request):
+        policy_check = getattr(settings, "POLICY_CHECK_FUNCTION", None)
+
+        # this check is an OR check rather than an AND check that is the
+        # default in the policy engine, so calling each rule individually
+        if policy_check and self.policy_rules:
+            for rule in self.policy_rules:
+                if policy_check((rule,), request):
+                    return True
+            return False
+
+        # default to allowed
+        return True
 
 
 class Registry(object):
@@ -147,10 +196,10 @@ class Registry(object):
             parent = self._registered_with._registerable_class.__name__
             raise NotRegistered('%(type)s with slug "%(slug)s" is not '
                                 'registered with %(parent)s "%(name)s".'
-                                    % {"type": class_name,
-                                       "slug": cls,
-                                       "parent": parent,
-                                       "name": self.slug})
+                                % {"type": class_name,
+                                   "slug": cls,
+                                   "parent": parent,
+                                   "name": self.slug})
         else:
             slug = getattr(cls, "slug", cls)
             raise NotRegistered('%(type)s with slug "%(slug)s" is not '
@@ -313,7 +362,7 @@ class Dashboard(Registry, HorizonComponent):
 
             class SystemPanels(horizon.PanelGroup):
                 slug = "syspanel"
-                name = _("System Panel")
+                name = _("System")
                 panels = ('overview', 'instances', ...)
 
             class Syspanel(horizon.Dashboard):
@@ -363,13 +412,6 @@ class Dashboard(Registry, HorizonComponent):
         to control whether or not this dashboard should appear in
         automatically-generated navigation. Default: ``True``.
 
-    .. attribute:: supports_tenants
-
-        Optional boolean that indicates whether or not this dashboard includes
-        support for projects/tenants. If set to ``True`` this dashboard's
-        navigation will include a UI element that allows the user to select
-        project/tenant. Default: ``False``.
-
     .. attribute:: public
 
         Boolean value to determine whether this dashboard can be viewed
@@ -383,7 +425,6 @@ class Dashboard(Registry, HorizonComponent):
     panels = []
     default_panel = None
     nav = True
-    supports_tenants = False
     public = False
 
     def __repr__(self):
@@ -410,7 +451,10 @@ class Dashboard(Registry, HorizonComponent):
         return all_panels
 
     def get_panel_group(self, slug):
-        return self._panel_groups[slug]
+        """Returns the specified :class:~horizon.PanelGroup
+        or None if not registered
+        """
+        return self._panel_groups.get(slug)
 
     def get_panel_groups(self):
         registered = copy.copy(self._registry)
@@ -461,13 +505,15 @@ class Dashboard(Registry, HorizonComponent):
                 continue
             url_slug = panel.slug.replace('.', '/')
             urlpatterns += patterns('',
-                    url(r'^%s/' % url_slug, include(panel._decorated_urls)))
+                                    url(r'^%s/' % url_slug,
+                                        include(panel._decorated_urls)))
         # Now the default view, which should come last
         if not default_panel:
             raise NotRegistered('The default panel "%s" is not registered.'
                                 % self.default_panel)
         urlpatterns += patterns('',
-                url(r'', include(default_panel._decorated_urls)))
+                                url(r'',
+                                    include(default_panel._decorated_urls)))
 
         # Require login if not public.
         if not self.public:
@@ -545,16 +591,38 @@ class Dashboard(Registry, HorizonComponent):
                 del loaders.panel_template_dirs[key]
         return success
 
+    def allowed(self, context):
+        """Checks for role based access for this dashboard.
+
+        Checks for access to any panels in the dashboard and of the the
+        dashboard itself.
+
+        This method should be overridden to return the result of
+        any policy checks required for the user to access this dashboard
+        when more complex checks are required.
+        """
+
+        # if the dashboard has policy rules, honor those above individual
+        # panels
+        if not self._can_access(context['request']):
+            return False
+
+        # check if access is allowed to a single panel,
+        # the default for each panel is True
+        for panel in self.get_panels():
+            if panel.can_access(context):
+                return True
+
+        return False
+
 
 class Workflow(object):
-    def __init__(*args, **kwargs):
-        raise NotImplementedError()
-
+    pass
 
 try:
     from django.utils.functional import empty  # noqa
 except ImportError:
-    #Django 1.3 fallback
+    # Django 1.3 fallback
     empty = None
 
 
@@ -701,7 +769,7 @@ class Site(Registry, HorizonComponent):
                 return user_home(user)
             elif isinstance(user_home, basestring):
                 # Assume we've got a URL if there's a slash in it
-                if user_home.find("/") != -1:
+                if '/' in user_home:
                     return user_home
                 else:
                     mod, func = user_home.rsplit(".", 1)
@@ -727,7 +795,7 @@ class Site(Registry, HorizonComponent):
         """Lazy loading for URL patterns.
 
         This method avoids problems associated with attempting to evaluate
-        the the URLconf before the settings module has been loaded.
+        the URLconf before the settings module has been loaded.
         """
         def url_patterns():
             return self._urls()[0]
@@ -764,7 +832,8 @@ class Site(Registry, HorizonComponent):
         # Compile the dynamic urlconf.
         for dash in self._registry.values():
             urlpatterns += patterns('',
-                    url(r'^%s/' % dash.slug, include(dash._decorated_urls)))
+                                    url(r'^%s/' % dash.slug,
+                                        include(dash._decorated_urls)))
 
         # Return the three arguments to django.conf.urls.include
         return urlpatterns, self.namespace, self.slug
@@ -802,14 +871,21 @@ class Site(Registry, HorizonComponent):
         """
         panel_customization = self._conf.get("panel_customization", [])
 
+        # Process all the panel groups first so that they exist before panels
+        # are added to them and Dashboard._autodiscover() doesn't wipe out any
+        # panels previously added when its panel groups are instantiated.
+        panel_configs = []
         for config in panel_customization:
             if config.get('PANEL'):
-                self._process_panel_configuration(config)
+                panel_configs.append(config)
             elif config.get('PANEL_GROUP'):
                 self._process_panel_group_configuration(config)
             else:
                 LOG.warning("Skipping %s because it doesn't have PANEL or "
                             "PANEL_GROUP defined.", config.__name__)
+        # Now process the panels.
+        for config in panel_configs:
+            self._process_panel_configuration(config)
 
     def _process_panel_configuration(self, config):
         """Add, remove and set default panels on the dashboard."""
@@ -842,7 +918,6 @@ class Site(Registry, HorizonComponent):
                 except ImportError:
                     LOG.warning("Could not load panel: %s", mod_path)
                     return
-
                 panel = getattr(mod, panel_cls)
                 dashboard_cls.register(panel)
                 if panel_group:
@@ -876,7 +951,8 @@ class Site(Registry, HorizonComponent):
             panel_group = type(panel_group_slug,
                                (PanelGroup, ),
                                {'slug': panel_group_slug,
-                                'name': panel_group_name},)
+                                'name': panel_group_name,
+                                'panels': []},)
             # Add the panel group to dashboard
             panels = list(dashboard_cls.panels)
             panels.append(panel_group)

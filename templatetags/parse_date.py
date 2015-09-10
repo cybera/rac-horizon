@@ -1,5 +1,3 @@
-# vim: tabstop=4 shiftwidth=4 softtabstop=4
-
 # Copyright 2012 United States Government as represented by the
 # Administrator of the National Aeronautics and Space Administration.
 # All Rights Reserved.
@@ -23,6 +21,7 @@ Template tags for parsing date strings.
 """
 
 from datetime import datetime  # noqa
+
 from django import template
 from django.utils import timezone
 
@@ -36,7 +35,7 @@ class ParseDateNode(template.Node):
         datetime.
         """
         formats = ["%Y-%m-%dT%H:%M:%S.%f", "%Y-%m-%d %H:%M:%S.%f",
-                "%Y-%m-%dT%H:%M:%S", "%Y-%m-%d %H:%M:%S"]
+                   "%Y-%m-%dT%H:%M:%S", "%Y-%m-%d %H:%M:%S"]
         if datestring:
             for format in formats:
                 try:
