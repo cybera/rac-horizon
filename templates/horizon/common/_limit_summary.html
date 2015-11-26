@@ -52,11 +52,13 @@
     </div>
 
     <!-- jt -->
+    <!-- disabling for now
     <div class="d3_quota_bar">
       <div class="d3_pie_chart_usage" data-used="{% quotapercent usage.limits.object_storage.used usage.limits.object_storage.quota %}"></div>
       <strong>{% trans "Object Storage" %} <br />
         {% blocktrans with used=usage.limits.object_storage.used|mb_float_format available=usage.limits.object_storage.quota|quotainf|mb_float_format %}Used <span> {{ used }} </span> of <span> {{ available  }} </span>{% endblocktrans %}
       </strong>
     </div>
+    -->
   {% endif %}
 </div>
