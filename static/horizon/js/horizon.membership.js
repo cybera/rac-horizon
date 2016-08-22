@@ -283,6 +283,31 @@ horizon.membership = {
     });
   },
 
+  add_member: function(step_slug) {
+    $(".available_" + step_slug + ", ." + step_slug + "_members").on('click', ".btn-group a[href='#add_remove']", function (evt) {
+      evt.preventDefault();
+      var data_id = horizon.membership.get_field_id($(this).parent().siblings().attr('data-' + step_slug +  '-id'));
+      var member_el = $(this).parent().parent();
+
+      var default_role = horizon.membership.default_role_id[step_slug];
+      $(this).text("-");
+      $("." + step_slug + "_members").append(member_el);
+      horizon.membership.add_member_to_role(step_slug, data_id, default_role);
+
+      if (horizon.membership.has_roles[step_slug]) {
+        $(this).parent().siblings(".role_options").show();
+        horizon.membership.update_member_role_dropdown(step_slug, data_id, [default_role], member_el);
+      }
+
+      // update lists
+      horizon.membership.list_filtering(step_slug);
+      horizon.membership.detect_no_results(step_slug);
+
+      // remove input filters
+      $("input." + step_slug + "_filter").val("");
+    });
+  },
+
   /*
    * Detects whether each list has members and if it does not
    * displays a message to the user.

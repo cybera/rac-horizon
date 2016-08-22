@@ -32,6 +32,14 @@ limitations under the License.
         });
     };
 
+    this.getUserId = function(name) {
+      var config = {'params': {'name': name}}
+      return apiService.get('/api/keystone/userbyname/', config)
+        .error(function () {
+          horizon.alert('error', gettext('Unable to get user ID.'));
+        });
+    };
+
     this.deleteUsers = function(user_ids) {
       return apiService.delete('/api/keystone/users/', user_ids)
         .error(function () {
