@@ -1,9 +1,7 @@
-import logging
+from django.utils.translation import ugettext_lazy as _
 
 from horizon.workflows.base import MembershipAction
 from horizon.workflows.base import Step
-
-LOG = logging.getLogger(__name__)
 
 
 class UpdateMembersStep(Step):
