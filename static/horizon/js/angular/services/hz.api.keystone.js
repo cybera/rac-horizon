@@ -32,7 +32,7 @@ limitations under the License.
         });
     };
 
-    this.getUserId = function(name) {
+    this.getUserByName = function(name) {
       var config = {'params': {'name': name}}
       return apiService.get('/api/keystone/userbyname/', config)
         .error(function () {

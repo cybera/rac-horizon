@@ -283,6 +283,17 @@ horizon.membership = {
     });
   },
 
+  foo: function(step_slug) {
+    $().on('click', "a[href='#add_member']", function (evt) {
+      var name = $();
+      var resp = angular.element(document.body).injector().get('keystoneAPI').getUserByName(name);
+
+      resp.success(function(data) {
+        data.user.id
+      });
+    });
+  },
+
   add_member: function(step_slug) {
     $(".available_" + step_slug + ", ." + step_slug + "_members").on('click', ".btn-group a[href='#add_remove']", function (evt) {
       evt.preventDefault();
