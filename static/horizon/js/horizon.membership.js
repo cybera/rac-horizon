@@ -291,6 +291,12 @@ horizon.membership = {
       resp.success(function(data) {
         var data_id = data.user.id;
         var default_role_id = horizon.membership.default_role_id[step_slug];
+
+        var el = "li[data-" + step_slug + "-id='id_" + step_slug + "_" + data_id + "']";
+        if ($('.update_members_members').find(el).length) {
+          return;
+        }
+
         $("." + step_slug + "_members").append(horizon.membership.generate_member_element(step_slug, name, data_id, [default_role_id], "-"));
 
         horizon.membership.data[step_slug][data_id] = name;
