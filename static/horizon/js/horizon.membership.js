@@ -479,6 +479,7 @@ horizon.membership = {
       horizon.membership.update_membership(step_slug);
       horizon.membership.select_member_role(step_slug);
       horizon.membership.add_new_member(step_slug);
+      horizon.membership.add_member(step_slug);
 
 
       // initially hide role dropdowns for available member list
