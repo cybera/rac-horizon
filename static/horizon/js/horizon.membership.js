@@ -285,7 +285,7 @@ horizon.membership = {
 
   add_member: function(step_slug) {
     $("#add_member_button").on('click', function (evt) {
-      var name = $("#id_email").value;
+      var name = $("#id_email").val();
       var resp = angular.element(document.body).injector().get('keystoneAPI').getUserByName(name);
 
       resp.success(function(data) {
