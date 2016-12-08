@@ -289,12 +289,13 @@ horizon.membership = {
       var resp = angular.element(document.body).injector().get('keystoneAPI').getUserByName(name);
 
       resp.success(function(data) {
+        var data_id = data.user.id;
         var default_role_id = horizon.membership.default_role_id[step_slug];
-        $("." + step_slug + "_members").append(horizon.membership.generate_member_element(step_slug, name, data.user.id, [default_role_id], "-"));
+        $("." + step_slug + "_members").append(horizon.membership.generate_member_element(step_slug, name, data_id, [default_role_id], "-"));
 
         horizon.membership.data[step_slug][data_id] = name;
         $("select[multiple='multiple']").append("<option value='" + data_id + "'>" + horizon.membership.data[step_slug][data_id] + "</option>");
-        horizon.membership.add_member_to_role(step_slug, data.user.id, default_role_id);
+        horizon.membership.add_member_to_role(step_slug, data_id, default_role_id);
 
         horizon.membership.list_filtering(step_slug);
         horizon.membership.detect_no_results(step_slug);
