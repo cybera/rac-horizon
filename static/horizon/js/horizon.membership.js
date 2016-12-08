@@ -295,7 +295,7 @@ horizon.membership = {
         var el = "li[data-" + step_slug + "-id='id_" + step_slug + "_" + data_id + "']";
         if ($('.update_members_members').find(el).length) {
           horizon.alert('error', 'User already exists');
-          $("input." + step_slug + "_filter").val("");
+          $("#id_email").val("");
           return;
         }
 
@@ -310,6 +310,7 @@ horizon.membership = {
         $("input." + step_slug + "_filter").val("");
         $("." +  step_slug + "_members .btn-group").removeClass('last_stripe');
         $("." +  step_slug + "_members .btn-group:last").addClass('last_stripe');
+        $("#id_email").val("");
       });
     });
   },
