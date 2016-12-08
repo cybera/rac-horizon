@@ -5,13 +5,15 @@
 <div class="membership {{ step.slug }}_membership dropdown_fix" data-show-roles="{{ step.show_roles }}">
 
   <div class="form-group required">
-    <label class="control-lavel col-sm-3 required" for="id_email">
-      "Email"
+    <label class="control-label col-sm-3 required" for="id_email">
+      Email
     </label>
-    <div class="col-xs-9">
+    <div class="input-group col-sm-9">
       <input class="form-control" id="id_email" name="email" type="text">
+      <span class="input-group-btn">
+        <a class="btn btn-primary" id="add_member_button" href="#add_member">+</a>
+      </span>
     </div>
-    <a class="btn btn-primary" id="add_member_button" href="#add_member">+</a>
   </div>
 
   <div class="header">
