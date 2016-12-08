@@ -289,19 +289,24 @@ horizon.membership = {
       var resp = angular.element(document.body).injector().get('keystoneAPI').getUserByName(name);
 
       resp.success(function(data) {
-        var member_el = $('<ul class="nav nav-pills btn-group btn-group-sm"><li class="member"><span class="display_name"></span></li><li class="active"><a class="btn btn-primary" href="#add_remove">-</a></li></ul>');
+        //var member_el = $('<ul class="nav nav-pills btn-group btn-group-sm"><li class="member"><span class="display_name"></span></li><li class="active"><a class="btn btn-primary" href="#add_remove">-</a></li></ul>');
         var prop = "data-" + step_slug + "id";
+        var default_role_id = horizon.membership.default_role_id[step_slug];
+        $("." + step_slug + "_members").append(horizon.membership.generate_member_element(step_slug, name, data.user.id, [default_role_id], "-"));
 
-        member_el[prop] = data.user.id;
-        member_el.siblings(".member").siblings(".display_name") = name;
-        $("." + step_slug + "_members").append(member_el);
+        horizon.membership.data[step_slug][data_id] = name;
+        $("select[multiple='multiple']").append("<option value='" + data_id + "'>" + horizon.membership.data[step_slug][data_id] + "</option>");
+        horizon.membership.add_member_to_role(step_slug, data.user.id, default_role_id);
 
-        // update lists
+        //member_el[prop] = data.user.id;
+        //member_el.siblings(".member").siblings(".display_name") = name;
+        //$("." + step_slug + "_members").append(member_el);
+
         horizon.membership.list_filtering(step_slug);
         horizon.membership.detect_no_results(step_slug);
-
-        // remove input filters
         $("input." + step_slug + "_filter").val("");
+        $("." +  step_slug + "_members .btn-group").removeClass('last_stripe');
+        $("." +  step_slug + "_members .btn-group:last").addClass('last_stripe');
       });
     });
   },
