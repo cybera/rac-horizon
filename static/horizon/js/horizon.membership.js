@@ -294,6 +294,8 @@ horizon.membership = {
 
         var el = "li[data-" + step_slug + "-id='id_" + step_slug + "_" + data_id + "']";
         if ($('.update_members_members').find(el).length) {
+          horizon.alert('error', 'User already exists');
+          $("input." + step_slug + "_filter").val("");
           return;
         }
 
