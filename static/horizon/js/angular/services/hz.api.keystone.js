@@ -36,7 +36,7 @@ limitations under the License.
       var config = {'params': {'name': name}}
       return apiService.get('/api/keystone/userbyname/', config)
         .error(function () {
-          horizon.alert('error', gettext('Unable to get user ID.'));
+          horizon.alert('error', gettext('Unable to find user.'));
         });
     };
 
