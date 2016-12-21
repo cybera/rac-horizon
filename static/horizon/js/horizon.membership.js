@@ -305,6 +305,8 @@ horizon.membership = {
         $("select[multiple='multiple']").append("<option value='" + data_id + "'>" + horizon.membership.data[step_slug][data_id] + "</option>");
         horizon.membership.add_member_to_role(step_slug, data_id, default_role_id);
 
+        $(".role_options").hide();
+
         horizon.membership.list_filtering(step_slug);
         horizon.membership.detect_no_results(step_slug);
         $("input." + step_slug + "_filter").val("");
